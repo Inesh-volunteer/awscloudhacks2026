@@ -8,7 +8,7 @@ An automated red team testing framework that uses LLM agents to discover and exp
 
 AgentRed is a serverless AWS-native system that orchestrates autonomous LLM-powered security testing across multiple attack objectives. The system runs parallel attack lanes, evaluates success using formal correctness properties, and provides operators with a browser-based dashboard to trigger and monitor campaigns.
 
-**Live Dashboard:** [Your S3 Website URL]
+**Live Dashboard:** [http://redteam-dashboard-ui.s3-website-us-west-2.amazonaws.com/]
 
 ## 🏗️ Architecture
 
