@@ -1,4 +1,4 @@
-# AutoRedTeam: Autonomous LLM Red Team Harness
+# AgentRed: Autonomous LLM Red Team Harness
 
 **AWS CloudHacks Hackathon Submission**
 
@@ -6,7 +6,7 @@ An automated red team testing framework that uses LLM agents to discover and exp
 
 ## 🎯 Project Overview
 
-AutoRedTeam is a serverless AWS-native system that orchestrates autonomous LLM-powered security testing across multiple attack objectives. The system runs parallel attack lanes, evaluates success using formal correctness properties, and provides operators with a browser-based dashboard to trigger and monitor campaigns.
+AgentRed is a serverless AWS-native system that orchestrates autonomous LLM-powered security testing across multiple attack objectives. The system runs parallel attack lanes, evaluates success using formal correctness properties, and provides operators with a browser-based dashboard to trigger and monitor campaigns.
 
 **Live Dashboard:** [Your S3 Website URL]
 
