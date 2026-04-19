@@ -1,0 +1,127 @@
+{
+  "Comment": "AutoRedTeam Main Orchestrator — triggers per-lane workers and finalizes the run",
+  "StartAt": "LoadObjectives",
+  "States": {
+    "LoadObjectives": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${OrchestratorInitFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "run_id.$": "$.Payload.run_id",
+        "timestamp.$": "$.Payload.timestamp",
+        "lanes.$": "$.Payload.lanes"
+      },
+      "ResultPath": "$",
+      "Next": "RunLanes",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "OrchestratorFailed",
+          "ResultPath": "$.error"
+        }
+      ]
+    },
+
+    "RunLanes": {
+      "Type": "Map",
+      "ItemsPath": "$.lanes",
+      "ItemSelector": {
+        "run_id.$": "$.run_id",
+        "lane_id.$": "$$.Map.Item.Value.lane_id",
+        "config_prefix.$": "$$.Map.Item.Value.config_prefix"
+      },
+      "MaxConcurrency": 10,
+      "Iterator": {
+        "StartAt": "RunLaneWorker",
+        "States": {
+          "RunLaneWorker": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${LaneWorkerFunctionArn}",
+              "Payload.$": "$"
+            },
+            "ResultSelector": {
+              "lane_id.$": "$.Payload.lane_id",
+              "status.$": "$.Payload.status",
+              "phi_score.$": "$.Payload.phi_score",
+              "terminal.$": "$.Payload.terminal",
+              "error.$": "$.Payload.error"
+            },
+            "End": true,
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException"],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$",
+                "Next": "LaneFailed"
+              }
+            ]
+          },
+          "LaneFailed": {
+            "Type": "Pass",
+            "Parameters": {
+              "lane_id.$": "$.lane_id",
+              "status": "FAILED",
+              "phi_score": 0.0,
+              "terminal": false,
+              "error.$": "$.Cause"
+            },
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.lane_results",
+      "Next": "FinalizeCycle"
+    },
+
+    "FinalizeCycle": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${RunSummarizerFunctionArn}",
+        "Payload": {
+          "run_id.$": "$.run_id",
+          "timestamp.$": "$.timestamp",
+          "lane_results.$": "$.lane_results"
+        }
+      },
+      "ResultSelector": {
+        "summary_key.$": "$.Payload.summary_key"
+      },
+      "End": true,
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ]
+    },
+
+    "OrchestratorFailed": {
+      "Type": "Fail",
+      "Error": "OrchestratorInitFailed",
+      "Cause": "Failed to load objectives from Parameter Store"
+    }
+  }
+}

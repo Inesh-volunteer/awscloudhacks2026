@@ -1,0 +1,90 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3ArtifactAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::autoredteam-*-artifacts-*",
+        "arn:aws:s3:::autoredteam-*-artifacts-*/*"
+      ]
+    },
+    {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/autoredteam-*-ObjectiveLanes",
+        "arn:aws:dynamodb:*:*:table/autoredteam-*-Runs"
+      ]
+    },
+    {
+      "Sid": "SSMParameterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": "arn:aws:ssm:*:*:parameter/autoredteam/*"
+    },
+    {
+      "Sid": "CloudWatchMetrics",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "StepFunctionsStartSync",
+      "Effect": "Allow",
+      "Action": [
+        "states:StartSyncExecution",
+        "states:StartExecution"
+      ],
+      "Resource": "arn:aws:states:*:*:stateMachine:autoredteam-*"
+    },
+    {
+      "Sid": "VPCNetworking",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DeleteNetworkInterface"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "XRayTracing",
+      "Effect": "Allow",
+      "Action": [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

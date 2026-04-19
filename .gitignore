@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AWS
+*.pem
+*.key
+
+# Zips (keep source, ignore built artifacts)
+*.zip
+
+# Lambda package directory (too large for GitHub)
+lambda_package/
+
+# Kiro specs (optional - keep if you want to show your planning process)
+# .kiro/

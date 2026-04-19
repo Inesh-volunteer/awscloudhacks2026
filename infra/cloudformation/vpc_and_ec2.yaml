@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AutoRedTeam — VPC, subnets, security groups, and EC2 instance running DVWA.
+
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  InstanceType:
+    Type: String
+    Default: t3.medium
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+  PrivateSubnet1Cidr:
+    Type: String
+    Default: "10.0.1.0/24"
+  PrivateSubnet2Cidr:
+    Type: String
+    Default: "10.0.2.0/24"
+  PublicSubnet1Cidr:
+    Type: String
+    Default: "10.0.10.0/24"
+
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # VPC
+  # ---------------------------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-vpc"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-igw"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # ---------------------------------------------------------------------------
+  # Subnets
+  # ---------------------------------------------------------------------------
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-public-1"
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1Cidr
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-private-1"
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2Cidr
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-private-2"
+
+  # ---------------------------------------------------------------------------
+  # NAT Gateway (for Lambda → Bedrock/SSM egress)
+  # ---------------------------------------------------------------------------
+  NatEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-nat"
+
+  # ---------------------------------------------------------------------------
+  # Route Tables
+  # ---------------------------------------------------------------------------
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # ---------------------------------------------------------------------------
+  # Security Groups
+  # ---------------------------------------------------------------------------
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "AutoRedTeam Lambda workers - outbound only"
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-lambda-sg"
+
+  DVWASecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "DVWA EC2 - allow HTTP only from Lambda SG"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-dvwa-sg"
+
+  # ---------------------------------------------------------------------------
+  # EC2 Instance Role
+  # ---------------------------------------------------------------------------
+  DVWAInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "autoredteam-${Env}-dvwa-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+  DVWAInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref DVWAInstanceRole
+
+  # ---------------------------------------------------------------------------
+  # EC2 Instance (DVWA)
+  # ---------------------------------------------------------------------------
+  DVWAInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref AmiId
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref DVWASecurityGroup
+      IamInstanceProfile: !Ref DVWAInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf update -y
+          dnf install -y docker
+          systemctl enable docker
+          systemctl start docker
+          usermod -aG docker ec2-user
+          docker pull vulnerables/web-dvwa:latest
+          docker run -d --name dvwa --restart unless-stopped -p 80:80 vulnerables/web-dvwa:latest
+          sleep 30
+          curl -sf http://localhost/setup.php -d "create_db=Create+%2F+Reset+Database" -c /tmp/c.txt -b /tmp/c.txt -L || true
+      Tags:
+        - Key: Name
+          Value: !Sub "autoredteam-${Env}-dvwa"
+        - Key: Environment
+          Value: !Ref Env
+
+Outputs:
+  VpcId:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "autoredteam-${Env}-VpcId"
+
+  PrivateSubnet1Id:
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub "autoredteam-${Env}-PrivateSubnet1Id"
+
+  PrivateSubnet2Id:
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub "autoredteam-${Env}-PrivateSubnet2Id"
+
+  LambdaSecurityGroupId:
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub "autoredteam-${Env}-LambdaSecurityGroupId"
+
+  DVWAPrivateIp:
+    Value: !GetAtt DVWAInstance.PrivateIp
+    Export:
+      Name: !Sub "autoredteam-${Env}-DVWAPrivateIp"

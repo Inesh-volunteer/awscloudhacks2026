@@ -1,0 +1,92 @@
+{
+  "Comment": "AutoRedTeam Reproducibility Sub-Machine — fans out re-runs and aggregates pass/fail",
+  "StartAt": "RunReruns",
+  "States": {
+    "RunReruns": {
+      "Type": "Map",
+      "ItemsPath": "$.reruns",
+      "ItemSelector": {
+        "run_id.$": "$.run_id",
+        "lane_id.$": "$.lane_id",
+        "mutation.$": "$.mutation",
+        "current_phi_score.$": "$.current_phi_score",
+        "rerun_index.$": "$$.Map.Item.Value.rerun_index"
+      },
+      "MaxConcurrency": 5,
+      "Iterator": {
+        "StartAt": "RunReproducibilityRunner",
+        "States": {
+          "RunReproducibilityRunner": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "${ReproducibilityRunnerFunctionArn}",
+              "Payload.$": "$"
+            },
+            "ResultSelector": {
+              "rerun_index.$": "$.Payload.rerun_index",
+              "passed.$": "$.Payload.passed",
+              "phi_score.$": "$.Payload.phi_score",
+              "terminal.$": "$.Payload.terminal"
+            },
+            "End": true,
+            "Retry": [
+              {
+                "ErrorEquals": ["Lambda.ServiceException"],
+                "IntervalSeconds": 1,
+                "MaxAttempts": 2,
+                "BackoffRate": 2
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$",
+                "Next": "RerunFailed"
+              }
+            ]
+          },
+          "RerunFailed": {
+            "Type": "Pass",
+            "Parameters": {
+              "rerun_index": -1,
+              "passed": false,
+              "phi_score": 0.0,
+              "terminal": false
+            },
+            "End": true
+          }
+        }
+      },
+      "ResultPath": "$.rerun_results",
+      "Next": "AggregateResults"
+    },
+
+    "AggregateResults": {
+      "Type": "Pass",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "lane_id.$": "$.lane_id",
+        "min_fraction.$": "$.min_fraction",
+        "rerun_results.$": "$.rerun_results"
+      },
+      "Next": "ComputePassFraction"
+    },
+
+    "ComputePassFraction": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${ReproAggregatorFunctionArn}",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "gate_passed.$": "$.Payload.gate_passed",
+        "fraction_passed.$": "$.Payload.fraction_passed",
+        "passed_count.$": "$.Payload.passed_count",
+        "total_count.$": "$.Payload.total_count"
+      },
+      "End": true
+    }
+  }
+}
